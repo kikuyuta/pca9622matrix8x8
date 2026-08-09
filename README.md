@@ -1,0 +1,45 @@
+# PCA9622Matrix8x8
+
+Elixir/Nerves driver for the switch-science
+["I2C 8x8 LEDマトリックス基板"](https://www.switch-science.com/products/2071)
+board, which drives an 8x8 LED matrix over I2C using the
+[PCA9622](http://doc.switch-science.com/schematic/PCA9622_aki_matrix/PCA9622_aki_matrix_sch.pdf)
+constant-current LED driver in a row/column multiplexed configuration.
+
+Includes `PCA9622Matrix8x8.CharGen`, a small character generator that
+renders decimal digits (0-9) and, given a radix of 16, hexadecimal digits
+(A-F) as 8x8 bitmaps suitable for `PCA9622Matrix8x8.set_matrix/1`.
+
+## Installation
+
+The package can be installed by adding `pca9622matrix8x8` to your list of
+dependencies in `mix.exs`:
+
+```elixir
+def deps do
+  [
+    {:pca9622matrix8x8, "~> 0.1.0"}
+  ]
+end
+```
+
+Not yet published to hex.pm; until then, depend on it via `path:` or `git:`.
+
+## Usage
+
+```elixir
+# Start the matrix driver (a GenServer) under your supervision tree.
+PCA9622Matrix8x8.start_link()
+
+# Show a hexadecimal digit (e.g. "F").
+PCA9622Matrix8x8.CharGen.digit_strlist(15, 16)
+|> PCA9622Matrix8x8.CharGen.strlist_tuples()
+|> PCA9622Matrix8x8.set_matrix()
+```
+
+See `PCA9622Matrix8x8.Demo` for a complete example that counts up once a
+second and displays the current number.
+
+Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
+and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
+be found at <https://hexdocs.pm/pca9622matrix8x8>.
