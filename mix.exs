@@ -1,7 +1,7 @@
 defmodule PCA9622Matrix8x8.MixProject do
   use Mix.Project
 
-  @version "0.1.1"
+  @version "0.1.2"
   @source_url "https://github.com/kikuyuta/pca9622matrix8x8"
 
   def project do
