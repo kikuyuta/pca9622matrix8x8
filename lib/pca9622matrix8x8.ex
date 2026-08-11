@@ -225,7 +225,9 @@ defmodule PCA9622Matrix8x8 do
   end
 
   def read_led(ref, offset, i2c_address \\ @default_i2c_address) do
-    Circuits.I2C.read(ref, i2c_address, <<@ledout0 + offset>>)
+    {:ok, data} = Circuits.I2C.write_read(ref, i2c_address, <<@ledout0 + offset>>, 1)
+
+    data
     |> :binary.decode_unsigned()
     |> IO.inspect(label: "Read LED Register #{offset}")
   end
