@@ -39,7 +39,6 @@ defmodule PCA9622Matrix8x8.MixProject do
 
   defp package do
     [
-      # TODO: confirm license before publishing to hex.pm
       licenses: ["MIT"],
       links: %{
         "GitHub" => @source_url,
