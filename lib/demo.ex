@@ -8,6 +8,10 @@ defmodule PCA9622Matrix8x8.Demo do
   require Logger
   Logger.metadata(module: __MODULE__)
 
+  @doc """
+  Starts the demo GenServer, which starts `PCA9622Matrix8x8` (with a column
+  refresh interval of `ms`) and counts up once a second on the matrix.
+  """
   def start_link(ms \\ 0) do
     GenServer.start_link(__MODULE__, ms, name: __MODULE__)
   end
@@ -39,6 +43,9 @@ defmodule PCA9622Matrix8x8.Demo do
     {:noreply, n + 1}
   end
 
+  @doc """
+  Stops the demo GenServer along with the underlying `PCA9622Matrix8x8` driver.
+  """
   def stop() do
     # Stop the LED matrix GenServer
     PCA9622Matrix8x8.stop()

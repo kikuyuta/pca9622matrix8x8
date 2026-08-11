@@ -13,8 +13,7 @@ defmodule PCA9622Matrix8x8 do
     * `:name` - GenServer name to register under (default: `#{inspect(__MODULE__)}`);
       pass `nil` to start unnamed, which allows multiple boards to run at once.
       When a name other than the default is used (or `nil`), pass the returned
-      pid/name explicitly to `set_matrix/2`, `set_matrix_bit/4`, `set_interval/2`
-      and `stop/1`.
+      pid/name explicitly to `set_matrix/2`, `set_matrix_bit/4` and `stop/1`.
   """
 
   use GenServer
@@ -36,6 +35,10 @@ defmodule PCA9622Matrix8x8 do
   # ms
   @default_reflesh_interval 10
 
+  @doc """
+  Starts the LED matrix driver GenServer. See the moduledoc for available
+  `opts`.
+  """
   def start_link(opts \\ []) when is_list(opts) do
     bus_name = Keyword.get(opts, :bus_name, @default_bus_name)
     i2c_address = Keyword.get(opts, :i2c_address, @default_i2c_address)
@@ -72,24 +75,26 @@ defmodule PCA9622Matrix8x8 do
     {:ok, {ref, i2c_address, new_mat, 0, reflesh_interval}}
   end
 
+  @doc """
+  Replaces the whole 8x8 matrix that is currently displayed.
+
+  `mat` is an 8x8 tuple of tuples of `0`/`1`, e.g. as built from
+  `PCA9622Matrix8x8.CharGen.digit_strlist/2` output.
+  """
   def set_matrix(server \\ __MODULE__, mat) do
     GenServer.cast(server, {:set_matrix, mat})
   end
 
+  @doc """
+  Sets a single pixel `(x, y)` of the currently displayed matrix to `value`
+  (`0` or `1`).
+  """
   def set_matrix_bit(server \\ __MODULE__, x, y, value) do
     GenServer.cast(server, {:set_matrix_bit, x, y, value})
   end
 
-  def set_interval(server \\ __MODULE__, interval) do
-    GenServer.cast(server, {:set_interval, interval})
-  end
-
   @impl true
   @doc false
-  def handle_cast({:set_interval, interval}, {ref, i2c_address, mat, counter, _old_interval}) do
-    {:noreply, {ref, i2c_address, mat, counter, interval}}
-  end
-
   def handle_cast({:set_matrix, mat}, {ref, i2c_address, _old_mat, counter, reflesh_interval}) do
     # mat is assumed to be an 8x8 matrix (tuple of tuples)
     # Logger.debug("Updating entire matrix")
@@ -105,7 +110,10 @@ defmodule PCA9622Matrix8x8 do
     {:noreply, {ref, i2c_address, new_mat, counter, reflesh_interval}}
   end
 
-  # Initialize the 8x8 matrix with the given value
+  @doc """
+  Builds an 8x8 matrix (as used by `set_matrix/2`) with every pixel set to
+  `value`. `value` may be `0`/`1`, or any other term treated as falsy/truthy.
+  """
   def set_matrix_all(value) do
     new_value =
       if is_integer(value) and value in [0, 1] do
@@ -194,6 +202,10 @@ defmodule PCA9622Matrix8x8 do
     0b01
   end
 
+  @doc """
+  Stops the LED matrix driver GenServer, turning all LEDs off and closing
+  the I2C bus.
+  """
   def stop(server \\ __MODULE__) do
     GenServer.stop(server, :normal)
   end
@@ -248,6 +260,11 @@ defmodule PCA9622Matrix8x8 do
     |> IO.inspect(label: "Read LED Register #{offset}")
   end
 
+  @doc """
+  Turns every LED on the board fully on. Takes a raw I2C `ref` (from
+  `Circuits.I2C.open/1` or `init_led/2`), not a GenServer. Useful as a quick
+  hardware sanity check.
+  """
   def all_on(ref, i2c_address \\ @default_i2c_address) do
     Circuits.I2C.write(ref, i2c_address, <<@ledout0, 0x00>>)
     Circuits.I2C.write(ref, i2c_address, <<@ledout1, 0x00>>)
@@ -255,6 +272,10 @@ defmodule PCA9622Matrix8x8 do
     Circuits.I2C.write(ref, i2c_address, <<@ledout3, 0x00>>)
   end
 
+  @doc """
+  Turns every LED on the board fully off. Takes a raw I2C `ref` (from
+  `Circuits.I2C.open/1` or `init_led/2`), not a GenServer.
+  """
   def all_off(ref, i2c_address \\ @default_i2c_address) do
     Circuits.I2C.write(ref, i2c_address, <<@ledout0, 0x55>>)
     Circuits.I2C.write(ref, i2c_address, <<@ledout1, 0x55>>)

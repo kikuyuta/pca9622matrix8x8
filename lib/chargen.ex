@@ -1,4 +1,11 @@
 defmodule PCA9622Matrix8x8.CharGen do
+  @doc """
+  Renders the digit `n` (in radix `m`, default 10) as an 8x8 bitmap.
+
+  Returns a list of 8 strings, one per row, each 8 characters of `"0"`/`"1"`
+  (top to bottom, left to right). Pass `16` for `m` to render hexadecimal
+  digits (0-9, A-F).
+  """
   def digit_strlist(n, m \\ 10) do
     case rem(n, m) do
       0 ->
@@ -207,6 +214,7 @@ defmodule PCA9622Matrix8x8.CharGen do
     end
   end
 
+  @doc false
   def strlist_tuples(str_list) do
     str_list
     # 1. Process each string into a "list of lists of integers"
