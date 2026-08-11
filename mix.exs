@@ -44,7 +44,8 @@ defmodule PCA9622Matrix8x8.MixProject do
       links: %{
         "GitHub" => @source_url,
         "Product page" => "https://www.switch-science.com/products/2071",
-        "Schematic" => "http://doc.switch-science.com/schematic/PCA9622_aki_matrix/PCA9622_aki_matrix_sch.pdf"
+        "Schematic" =>
+          "http://doc.switch-science.com/schematic/PCA9622_aki_matrix/PCA9622_aki_matrix_sch.pdf"
       }
     ]
   end

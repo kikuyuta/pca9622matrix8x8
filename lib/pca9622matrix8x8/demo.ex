@@ -13,10 +13,13 @@ defmodule PCA9622Matrix8x8.Demo do
   end
 
   def init(ms) do
-    PCA9622Matrix8x8.start_link(reflesh_interval: ms) # Start the LED matrix GenServer
+    # Start the LED matrix GenServer
+    PCA9622Matrix8x8.start_link(reflesh_interval: ms)
     Logger.info("#{__MODULE__} started:")
-    Process.send_after(self(), :tick, 1000) # Send a :tick message every second
-    {:ok, 0} # Initial state is 0
+    # Send a :tick message every second
+    Process.send_after(self(), :tick, 1000)
+    # Initial state is 0
+    {:ok, 0}
   end
 
   def handle_info(:tick, n) do
@@ -25,13 +28,18 @@ defmodule PCA9622Matrix8x8.Demo do
     PCA9622Matrix8x8.CharGen.digit_strlist(n)
     |> PCA9622Matrix8x8.CharGen.strlist_tuples()
     |> PCA9622Matrix8x8.set_matrix()
-    Process.send_after(self(), :tick, 1000) # Schedule the next tick
-    {:noreply, n + 1} # Update the state to n + 1
+
+    # Schedule the next tick
+    Process.send_after(self(), :tick, 1000)
+    # Update the state to n + 1
+    {:noreply, n + 1}
   end
 
   def stop() do
-    PCA9622Matrix8x8.stop() # Stop the LED matrix GenServer
-    GenServer.stop(__MODULE__, :normal) # Stop this GenServer too
+    # Stop the LED matrix GenServer
+    PCA9622Matrix8x8.stop()
+    # Stop this GenServer too
+    GenServer.stop(__MODULE__, :normal)
     :ok
   end
 end

@@ -21,18 +21,20 @@ defmodule PCA9622Matrix8x8 do
   require Logger
 
   @default_bus_name "i2c-2"
-  @default_i2c_address 0x50 # default for PCA9622
+  # default for PCA9622
+  @default_i2c_address 0x50
 
   # PCA9622 register addresses
   @mode1 0x00
   @mode2 0x01
-#  @pwm0 0x02
+  #  @pwm0 0x02
   @ledout0 0x14
   @ledout1 0x15
   @ledout2 0x16
   @ledout3 0x17
 
-  @default_reflesh_interval 10 # ms
+  # ms
+  @default_reflesh_interval 10
 
   def start_link(opts \\ []) when is_list(opts) do
     bus_name = Keyword.get(opts, :bus_name, @default_bus_name)
@@ -54,7 +56,10 @@ defmodule PCA9622Matrix8x8 do
   end
 
   def init({bus_name, i2c_address, initial_matrix, reflesh_interval}) do
-    Logger.info("Initializing LED Matrix GenServer on #{bus_name} at 0x#{Integer.to_string(i2c_address, 16)}")
+    Logger.info(
+      "Initializing LED Matrix GenServer on #{bus_name} at 0x#{Integer.to_string(i2c_address, 16)}"
+    )
+
     # Trap exits so cleanup still runs on abnormal termination
     Process.flag(:trap_exit, true)
     {:ok, ref} = Circuits.I2C.open(bus_name)
@@ -87,27 +92,35 @@ defmodule PCA9622Matrix8x8 do
     {:noreply, {ref, i2c_address, mat, counter, reflesh_interval}}
   end
 
-  def handle_cast({:set_matrix_bit, x, y, value}, {ref, i2c_address, old_mat, counter, reflesh_interval}) do
+  def handle_cast(
+        {:set_matrix_bit, x, y, value},
+        {ref, i2c_address, old_mat, counter, reflesh_interval}
+      ) do
     new_row = put_elem(elem(old_mat, y), x, value)
     new_mat = put_elem(old_mat, y, new_row)
     {:noreply, {ref, i2c_address, new_mat, counter, reflesh_interval}}
   end
 
-  def set_matrix_all(value) do # Initialize the 8x8 matrix with the given value
-    new_value =if is_integer(value) and value in [0, 1] do
-      value
-    else
-      if value, do: 1, else: 0
-    end
+  # Initialize the 8x8 matrix with the given value
+  def set_matrix_all(value) do
+    new_value =
+      if is_integer(value) and value in [0, 1] do
+        value
+      else
+        if value, do: 1, else: 0
+      end
 
-    (for _ <- 0..7, do: List.duplicate(new_value, 8) |> List.to_tuple()) |> List.to_tuple()
+    for(_ <- 0..7, do: List.duplicate(new_value, 8) |> List.to_tuple()) |> List.to_tuple()
   end
 
   def handle_info(:dyn_wait, {ref, i2c_address, mat, counter, reflesh_interval}) do
     {:noreply, {ref, i2c_address, mat, counter, reflesh_interval}, {:continue, :update_leds}}
   end
 
-  def handle_info({:EXIT, _from, reason}, {ref, i2c_address, _mat, _counter, _reflesh_interval} = state) do
+  def handle_info(
+        {:EXIT, _from, reason},
+        {ref, i2c_address, _mat, _counter, _reflesh_interval} = state
+      ) do
     Logger.info("Received EXIT signal with reason: #{inspect(reason)}, cleaning up LED Matrix")
     stop_led(ref, i2c_address)
     {:stop, reason, state}
@@ -115,15 +128,16 @@ defmodule PCA9622Matrix8x8 do
 
   def handle_continue(:update_leds, {ref, i2c_address, mat, counter, reflesh_interval}) do
     # Clear the previous display (without this, the old column leaves a ghost image)
-    {row_high, row_low} = bit_expand({0,0,0,0,0,0,0,0})
-#    {col_high, col_low} = bit_expand(counter)
+    {row_high, row_low} = bit_expand({0, 0, 0, 0, 0, 0, 0, 0})
+    #    {col_high, col_low} = bit_expand(counter)
     Circuits.I2C.write(ref, i2c_address, <<@ledout0, row_low::binary>>)
     Circuits.I2C.write(ref, i2c_address, <<@ledout1, row_high::binary>>)
-#    Circuits.I2C.write(ref, i2c_address, <<@ledout2, col_low::binary>>)
-#    Circuits.I2C.write(ref, i2c_address, <<@ledout3, col_high::binary>>)
+    #    Circuits.I2C.write(ref, i2c_address, <<@ledout2, col_low::binary>>)
+    #    Circuits.I2C.write(ref, i2c_address, <<@ledout3, col_high::binary>>)
 
     # Display the next column
-    new_counter = rem(counter + 1, 8) # Loop the counter through the range 0-7
+    # Loop the counter through the range 0-7
+    new_counter = rem(counter + 1, 8)
     {row_high, row_low} = bit_expand(elem(mat, new_counter))
     {col_high, col_low} = bit_expand(new_counter)
 
@@ -141,7 +155,7 @@ defmodule PCA9622Matrix8x8 do
     # Expand each bit into 2 bits and return a tuple of two bytes
     # e.g. a bit of 1 becomes '00' (0x00), and 0 becomes '01' (0x01)
     high = <<enbit(b7)::2, enbit(b6)::2, enbit(b5)::2, enbit(b4)::2>>
-    low  = <<enbit(b3)::2, enbit(b2)::2, enbit(b1)::2, enbit(b0)::2>>
+    low = <<enbit(b3)::2, enbit(b2)::2, enbit(b1)::2, enbit(b0)::2>>
     {high, low}
   end
 
@@ -155,15 +169,20 @@ defmodule PCA9622Matrix8x8 do
   def bit_expand(0), do: {<<0x15>>, <<0x55>>}
 
   def bit_expand(x) do
-   Logger.error("Invalid input for bit_expand: #{inspect(x)}. Expected a tuple of 8 bits.")
-   {<<0x55>>, <<0x55>>} # Return the all-OFF state
+    Logger.error("Invalid input for bit_expand: #{inspect(x)}. Expected a tuple of 8 bits.")
+    # Return the all-OFF state
+    {<<0x55>>, <<0x55>>}
   end
 
-  defp enbit(0), do: 0b01 # LED OFF
-  defp enbit(1), do: 0b00 # LED ON
+  # LED OFF
+  defp enbit(0), do: 0b01
+  # LED ON
+  defp enbit(1), do: 0b00
+
   defp enbit(n) do
     Logger.error("Invalid bit value: #{inspect(n)}. Expected 0 or 1.")
-    0b01 # Default to OFF
+    # Default to OFF
+    0b01
   end
 
   def stop(server \\ __MODULE__) do
@@ -171,14 +190,15 @@ defmodule PCA9622Matrix8x8 do
   end
 
   def terminate(_reason, {ref, i2c_address, _mat, _counter, _reflesh_interval}) do
-    stop_led(ref, i2c_address) # Turn all LEDs OFF and close the I2C bus
+    # Turn all LEDs OFF and close the I2C bus
+    stop_led(ref, i2c_address)
     Logger.info("Terminating LED Matrix GenServer")
     :ok
   end
 
-# The functions below are mainly called directly, outside of the GenServer
+  # The functions below are mainly called directly, outside of the GenServer
 
-def init_led(bus_name \\ @default_bus_name, i2c_address \\ @default_i2c_address) do
+  def init_led(bus_name \\ @default_bus_name, i2c_address \\ @default_i2c_address) do
     {:ok, ref} = Circuits.I2C.open(bus_name)
     Circuits.I2C.write(ref, i2c_address, <<@mode1, 0x00>>)
     Circuits.I2C.write(ref, i2c_address, <<@mode2, 0x55>>)
@@ -189,7 +209,6 @@ def init_led(bus_name \\ @default_bus_name, i2c_address \\ @default_i2c_address)
     all_off(ref, i2c_address)
     Circuits.I2C.close(ref)
   end
-
 
   def set_xyzw(ref, x, y, z, w, i2c_address \\ @default_i2c_address) do
     Circuits.I2C.write(ref, i2c_address, <<@ledout0, x>>)
