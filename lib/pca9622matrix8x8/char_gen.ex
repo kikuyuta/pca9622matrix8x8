@@ -224,6 +224,7 @@ defmodule PCA9622Matrix8x8.CharGen do
     |> List.to_tuple()
   end
 
+  @doc false
   def test() do
     0..9
     |> Enum.map(&digit_strlist/1)

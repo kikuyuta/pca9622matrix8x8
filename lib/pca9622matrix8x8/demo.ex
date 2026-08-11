@@ -12,6 +12,8 @@ defmodule PCA9622Matrix8x8.Demo do
     GenServer.start_link(__MODULE__, ms, name: __MODULE__)
   end
 
+  @impl true
+  @doc false
   def init(ms) do
     # Start the LED matrix GenServer
     PCA9622Matrix8x8.start_link(reflesh_interval: ms)
@@ -22,6 +24,8 @@ defmodule PCA9622Matrix8x8.Demo do
     {:ok, 0}
   end
 
+  @impl true
+  @doc false
   def handle_info(:tick, n) do
     Logger.info("Current number: #{n}")
     # Show the number on the LED matrix
