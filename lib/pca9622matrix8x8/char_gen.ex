@@ -209,7 +209,7 @@ defmodule PCA9622Matrix8x8.CharGen do
 
   def strlist_tuples(str_list) do
     str_list
-    # 1. 各文字列を処理して「整数のリストのリスト」を作る
+    # 1. Process each string into a "list of lists of integers"
     |> Enum.map(fn string ->
       string
       # "00000" -> ["0", "0", "0", "0", "0"]
@@ -219,7 +219,7 @@ defmodule PCA9622Matrix8x8.CharGen do
       # [0, 0, 0, 0, 0] -> {0, 0, 0, 0, 0}
       |> List.to_tuple()
     end)
-    # 2. 外側のリストもタプルに変換する
+    # 2. Convert the outer list into a tuple as well
     # [{0,...}, {1,...}] -> {{0,...}, {1,...}}
     |> List.to_tuple()
   end

@@ -3,14 +3,27 @@ defmodule PCA9622Matrix8x8 do
   Driver for the switch-science "I2C 8x8 LED matrix" board
   (https://www.switch-science.com/products/2071), which multiplexes an
   8x8 LED matrix over I2C using the PCA9622 constant-current LED driver.
+
+  `start_link/1` accepts:
+
+    * `:bus_name` - the I2C bus to open (default: `"i2c-2"`)
+    * `:i2c_address` - the PCA9622's I2C address (default: `0x50`)
+    * `:reflesh_interval` - column refresh interval in ms (default: `10`)
+    * `:initial_matrix` - initial 8x8 matrix to display
+    * `:name` - GenServer name to register under (default: `#{inspect(__MODULE__)}`);
+      pass `nil` to start unnamed, which allows multiple boards to run at once.
+      When a name other than the default is used (or `nil`), pass the returned
+      pid/name explicitly to `set_matrix/2`, `set_matrix_bit/4`, `set_interval/2`
+      and `stop/1`.
   """
 
   use GenServer
   require Logger
 
-  @i2c_address 0x50 # default for PCA9622
+  @default_bus_name "i2c-2"
+  @default_i2c_address 0x50 # default for PCA9622
 
-  # PCA9622 レジスタアドレス
+  # PCA9622 register addresses
   @mode1 0x00
   @mode2 0x01
 #  @pwm0 0x02
@@ -21,51 +34,66 @@ defmodule PCA9622Matrix8x8 do
 
   @default_reflesh_interval 10 # ms
 
-  def start_link(reflesh_interval \\ @default_reflesh_interval) do
-    GenServer.start_link(__MODULE__, {nil, reflesh_interval}, name: __MODULE__)
+  def start_link(opts \\ []) when is_list(opts) do
+    bus_name = Keyword.get(opts, :bus_name, @default_bus_name)
+    i2c_address = Keyword.get(opts, :i2c_address, @default_i2c_address)
+    reflesh_interval = Keyword.get(opts, :reflesh_interval, @default_reflesh_interval)
+    initial_matrix = Keyword.get(opts, :initial_matrix)
+
+    gen_opts =
+      case Keyword.get(opts, :name, __MODULE__) do
+        nil -> []
+        name -> [name: name]
+      end
+
+    GenServer.start_link(
+      __MODULE__,
+      {bus_name, i2c_address, initial_matrix, reflesh_interval},
+      gen_opts
+    )
   end
 
-  def init({initial_matrix, reflesh_interval}) do
-    Logger.info("Initializing LED Matrix GenServer")
-    # シグナルトラップを有効にして、異常終了時にもクリーンアップが実行されるようにする
+  def init({bus_name, i2c_address, initial_matrix, reflesh_interval}) do
+    Logger.info("Initializing LED Matrix GenServer on #{bus_name} at 0x#{Integer.to_string(i2c_address, 16)}")
+    # Trap exits so cleanup still runs on abnormal termination
     Process.flag(:trap_exit, true)
-    {:ok, ref} = Circuits.I2C.open("i2c-2")
-    Circuits.I2C.write(ref, @i2c_address, <<@mode1, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@mode2, 0x55>>)
+    {:ok, ref} = Circuits.I2C.open(bus_name)
+    Circuits.I2C.write(ref, i2c_address, <<@mode1, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@mode2, 0x55>>)
     new_mat = if is_nil(initial_matrix), do: set_matrix_all(0), else: initial_matrix
     Process.send_after(self(), :dyn_wait, reflesh_interval)
-    {:ok, {ref, new_mat, 0, reflesh_interval}}
+    {:ok, {ref, i2c_address, new_mat, 0, reflesh_interval}}
   end
 
-  def set_matrix(mat) do
-    GenServer.cast(__MODULE__, {:set_matrix, mat})
+  def set_matrix(server \\ __MODULE__, mat) do
+    GenServer.cast(server, {:set_matrix, mat})
   end
 
-  def set_matrix_bit(x, y, value) do
-    GenServer.cast(__MODULE__, {:set_matrix_bit, x, y, value})
+  def set_matrix_bit(server \\ __MODULE__, x, y, value) do
+    GenServer.cast(server, {:set_matrix_bit, x, y, value})
   end
 
-  def set_interval(interval) do
-    GenServer.cast(__MODULE__, {:set_interval, interval})
+  def set_interval(server \\ __MODULE__, interval) do
+    GenServer.cast(server, {:set_interval, interval})
   end
 
-  def handle_cast({:set_interval, interval}, {ref, mat, counter, _old_interval}) do
-    {:noreply, {ref, mat, counter, interval}}
+  def handle_cast({:set_interval, interval}, {ref, i2c_address, mat, counter, _old_interval}) do
+    {:noreply, {ref, i2c_address, mat, counter, interval}}
   end
 
-  def handle_cast({:set_matrix, mat}, {ref, _old_mat, counter, reflesh_interval}) do
-    # mat は 8x8 の行列 (tuple の tuple) と仮定
+  def handle_cast({:set_matrix, mat}, {ref, i2c_address, _old_mat, counter, reflesh_interval}) do
+    # mat is assumed to be an 8x8 matrix (tuple of tuples)
     # Logger.debug("Updating entire matrix")
-    {:noreply, {ref, mat, counter, reflesh_interval}}
+    {:noreply, {ref, i2c_address, mat, counter, reflesh_interval}}
   end
 
-  def handle_cast({:set_matrix_bit, x, y, value}, {ref, old_mat, counter, reflesh_interval}) do
+  def handle_cast({:set_matrix_bit, x, y, value}, {ref, i2c_address, old_mat, counter, reflesh_interval}) do
     new_row = put_elem(elem(old_mat, y), x, value)
     new_mat = put_elem(old_mat, y, new_row)
-    {:noreply, {ref, new_mat, counter, reflesh_interval}}
+    {:noreply, {ref, i2c_address, new_mat, counter, reflesh_interval}}
   end
 
-  def set_matrix_all(value) do # 8x8の行列を指定された値で初期化
+  def set_matrix_all(value) do # Initialize the 8x8 matrix with the given value
     new_value =if is_integer(value) and value in [0, 1] do
       value
     else
@@ -75,43 +103,43 @@ defmodule PCA9622Matrix8x8 do
     (for _ <- 0..7, do: List.duplicate(new_value, 8) |> List.to_tuple()) |> List.to_tuple()
   end
 
-  def handle_info(:dyn_wait, {ref, mat, counter, reflesh_interval}) do
-    {:noreply, {ref, mat, counter, reflesh_interval}, {:continue, :update_leds}}
+  def handle_info(:dyn_wait, {ref, i2c_address, mat, counter, reflesh_interval}) do
+    {:noreply, {ref, i2c_address, mat, counter, reflesh_interval}, {:continue, :update_leds}}
   end
 
-  def handle_info({:EXIT, _from, reason}, {ref, mat, counter, reflesh_interval}) do
+  def handle_info({:EXIT, _from, reason}, {ref, i2c_address, _mat, _counter, _reflesh_interval} = state) do
     Logger.info("Received EXIT signal with reason: #{inspect(reason)}, cleaning up LED Matrix")
-    stop_led(ref)
-    {:stop, reason, {ref, mat, counter, reflesh_interval}}
+    stop_led(ref, i2c_address)
+    {:stop, reason, state}
   end
 
-  def handle_continue(:update_leds, {ref, mat, counter, reflesh_interval}) do
-    # 元の表示を消去（これを入れないと元の列に残像が残る）
+  def handle_continue(:update_leds, {ref, i2c_address, mat, counter, reflesh_interval}) do
+    # Clear the previous display (without this, the old column leaves a ghost image)
     {row_high, row_low} = bit_expand({0,0,0,0,0,0,0,0})
 #    {col_high, col_low} = bit_expand(counter)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, row_low::binary>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, row_high::binary>>)
-#    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, col_low::binary>>)
-#    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, col_high::binary>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, row_low::binary>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, row_high::binary>>)
+#    Circuits.I2C.write(ref, i2c_address, <<@ledout2, col_low::binary>>)
+#    Circuits.I2C.write(ref, i2c_address, <<@ledout3, col_high::binary>>)
 
-    # 次の列を表示
-    new_counter = rem(counter + 1, 8) # 0〜7の範囲でカウンターをループさせる
+    # Display the next column
+    new_counter = rem(counter + 1, 8) # Loop the counter through the range 0-7
     {row_high, row_low} = bit_expand(elem(mat, new_counter))
     {col_high, col_low} = bit_expand(new_counter)
 
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, col_low::binary>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, col_high::binary>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, row_low::binary>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, row_high::binary>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout2, col_low::binary>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout3, col_high::binary>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, row_low::binary>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, row_high::binary>>)
 
     Process.send_after(self(), :dyn_wait, reflesh_interval)
-    {:noreply, {ref, mat, new_counter, reflesh_interval}}
+    {:noreply, {ref, i2c_address, mat, new_counter, reflesh_interval}}
   end
 
   def bit_expand({b7, b6, b5, b4, b3, b2, b1, b0}) do
-    # row は 8ビットの整数と仮定 (例えば、0b10101010)
-    # 各ビットを2ビットに展開して、2バイトの tupleを返す
-    # 例えば、ビットが1なら '00' (0x00)、0なら '01' (0x01) とする
+    # row is assumed to be 8 bits (e.g. 0b10101010)
+    # Expand each bit into 2 bits and return a tuple of two bytes
+    # e.g. a bit of 1 becomes '00' (0x00), and 0 becomes '01' (0x01)
     high = <<enbit(b7)::2, enbit(b6)::2, enbit(b5)::2, enbit(b4)::2>>
     low  = <<enbit(b3)::2, enbit(b2)::2, enbit(b1)::2, enbit(b0)::2>>
     {high, low}
@@ -128,107 +156,107 @@ defmodule PCA9622Matrix8x8 do
 
   def bit_expand(x) do
    Logger.error("Invalid input for bit_expand: #{inspect(x)}. Expected a tuple of 8 bits.")
-   {<<0x55>>, <<0x55>>} # 全てOFFの状態を返す
+   {<<0x55>>, <<0x55>>} # Return the all-OFF state
   end
 
   defp enbit(0), do: 0b01 # LED OFF
   defp enbit(1), do: 0b00 # LED ON
   defp enbit(n) do
     Logger.error("Invalid bit value: #{inspect(n)}. Expected 0 or 1.")
-    0b01 # デフォルトはOFF
+    0b01 # Default to OFF
   end
 
-  def stop() do
-    GenServer.stop(__MODULE__, :normal)
+  def stop(server \\ __MODULE__) do
+    GenServer.stop(server, :normal)
   end
 
-  def terminate(_reason, {ref, _mat, _counter, _reflesh_interval}) do
-    stop_led(ref) # LEDを全てOFFにしてI2Cバスをクローズ
+  def terminate(_reason, {ref, i2c_address, _mat, _counter, _reflesh_interval}) do
+    stop_led(ref, i2c_address) # Turn all LEDs OFF and close the I2C bus
     Logger.info("Terminating LED Matrix GenServer")
     :ok
   end
 
-# 以降は主に GenServer の外で直接呼び出す関数群
+# The functions below are mainly called directly, outside of the GenServer
 
-def init_led() do
-    {:ok, ref} = Circuits.I2C.open("i2c-2")
-    Circuits.I2C.write(ref, @i2c_address, <<@mode1, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@mode2, 0x55>>)
+def init_led(bus_name \\ @default_bus_name, i2c_address \\ @default_i2c_address) do
+    {:ok, ref} = Circuits.I2C.open(bus_name)
+    Circuits.I2C.write(ref, i2c_address, <<@mode1, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@mode2, 0x55>>)
     ref
   end
 
-  def stop_led(ref) do
-    all_off(ref)
+  def stop_led(ref, i2c_address \\ @default_i2c_address) do
+    all_off(ref, i2c_address)
     Circuits.I2C.close(ref)
   end
 
 
-  def set_xyzw(ref, x, y, z, w) do
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, x>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, y>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, z>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, w>>)
+  def set_xyzw(ref, x, y, z, w, i2c_address \\ @default_i2c_address) do
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, x>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, y>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout2, z>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout3, w>>)
   end
 
-  def set_00(ref) do
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, 0x51>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, 0x55>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, 0x51>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, 0x55>>)
+  def set_00(ref, i2c_address \\ @default_i2c_address) do
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, 0x51>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, 0x55>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout2, 0x51>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout3, 0x55>>)
   end
 
-  def read_led(ref, offset) do
-    Circuits.I2C.read(ref, @i2c_address, <<@ledout0 + offset>>)
+  def read_led(ref, offset, i2c_address \\ @default_i2c_address) do
+    Circuits.I2C.read(ref, i2c_address, <<@ledout0 + offset>>)
     |> :binary.decode_unsigned()
     |> IO.inspect(label: "Read LED Register #{offset}")
   end
 
-  def all_on(ref) do
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, 0x00>>)
+  def all_on(ref, i2c_address \\ @default_i2c_address) do
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout2, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout3, 0x00>>)
   end
 
-  def all_off(ref) do
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, 0x55>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, 0x55>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, 0x00>>)
+  def all_off(ref, i2c_address \\ @default_i2c_address) do
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, 0x55>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, 0x55>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout2, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout3, 0x00>>)
   end
 
-  def test_start() do
-    # 1. I2Cバスのオープン (環境に合わせて "i2c-1" などに変更)
-    {:ok, ref} = Circuits.I2C.open("i2c-2")
+  def test_start(bus_name \\ @default_bus_name, i2c_address \\ @default_i2c_address) do
+    # 1. Open the I2C bus (change to e.g. "i2c-1" to match the environment)
+    {:ok, ref} = Circuits.I2C.open(bus_name)
 
-    # 2. 初期化: SLEEP解除 (MODE1レジスタ)
-    Circuits.I2C.write(ref, @i2c_address, <<@mode1, 0x00>>)
-    # Circuits.I2C.write(ref, @i2c_address, <<@mode2, 0x05>>)
+    # 2. Initialize: clear SLEEP (MODE1 register)
+    Circuits.I2C.write(ref, i2c_address, <<@mode1, 0x00>>)
+    # Circuits.I2C.write(ref, i2c_address, <<@mode2, 0x05>>)
 
-    # 3. 全てのLEDピンを「PWM制御モード」に設定 (0〜3)
-    # 0xAA は 2進数で 10101010 (各ピン2ビットで '10' = PWMモード)
+    # 3. Set all LED pins to "PWM control mode" (0-3)
+    # 0xAA is binary 10101010 (2 bits per pin, '10' = PWM mode)
     # Enum.each(0..3, fn offset ->
-    #   Circuits.I2C.write(ref, @i3c_address, <<@pwm0 + offset, 0x55>>)
+    #   Circuits.I2C.write(ref, i2c_address, <<@pwm0 + offset, 0x55>>)
     # end)
-    # これはじっさいにはやってないのであってるかは不明。
-    test_loop(ref)
+    # This isn't actually done above, so it's unclear whether it's correct.
+    test_loop(ref, i2c_address)
   end
 
-  def test_loop(ref) do
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, 0x00>>)
+  def test_loop(ref, i2c_address \\ @default_i2c_address) do
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout2, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout3, 0x00>>)
     IO.puts("LEDs should be On now.")
     Process.sleep(1000)
 
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout0, 0x55>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout1, 0x55>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout2, 0x00>>)
-    Circuits.I2C.write(ref, @i2c_address, <<@ledout3, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout0, 0x55>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout1, 0x55>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout2, 0x00>>)
+    Circuits.I2C.write(ref, i2c_address, <<@ledout3, 0x00>>)
     IO.puts("LEDs should be Off now.")
     Process.sleep(1000)
 
-    test_loop(ref)
+    test_loop(ref, i2c_address)
   end
 end

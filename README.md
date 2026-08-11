@@ -1,7 +1,7 @@
 # PCA9622Matrix8x8
 
 Elixir/Nerves driver for the switch-science
-["I2C 8x8 LEDマトリックス基板"](https://www.switch-science.com/products/2071)
+["I2C 8x8 LEDマトリックス基板" (I2C 8x8 LED matrix board)](https://www.switch-science.com/products/2071)
 board, which drives an 8x8 LED matrix over I2C using the
 [PCA9622](http://doc.switch-science.com/schematic/PCA9622_aki_matrix/PCA9622_aki_matrix_sch.pdf)
 constant-current LED driver in a row/column multiplexed configuration.
@@ -36,6 +36,21 @@ PCA9622Matrix8x8.CharGen.digit_strlist(15, 16)
 |> PCA9622Matrix8x8.CharGen.strlist_tuples()
 |> PCA9622Matrix8x8.set_matrix()
 ```
+
+`start_link/1` takes an options keyword list, so multiple boards can be
+driven independently:
+
+```elixir
+PCA9622Matrix8x8.start_link(
+  bus_name: "i2c-1",
+  i2c_address: 0x52,
+  name: :second_matrix
+)
+
+PCA9622Matrix8x8.set_matrix(:second_matrix, mat)
+```
+
+Pass `name: nil` to start an unnamed process and address it by pid instead.
 
 See `PCA9622Matrix8x8.Demo` for a complete example that counts up once a
 second and displays the current number.

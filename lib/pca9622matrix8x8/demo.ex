@@ -13,25 +13,25 @@ defmodule PCA9622Matrix8x8.Demo do
   end
 
   def init(ms) do
-    PCA9622Matrix8x8.start_link(ms) # LEDマトリクスのGenServerを起動
+    PCA9622Matrix8x8.start_link(reflesh_interval: ms) # Start the LED matrix GenServer
     Logger.info("#{__MODULE__} started:")
-    Process.send_after(self(), :tick, 1000) # 1秒ごとに :tick メッセージを送る
-    {:ok, 0} # 初期状態は0
+    Process.send_after(self(), :tick, 1000) # Send a :tick message every second
+    {:ok, 0} # Initial state is 0
   end
 
   def handle_info(:tick, n) do
     Logger.info("Current number: #{n}")
-    # 数字をLEDマトリクスに表示
+    # Show the number on the LED matrix
     PCA9622Matrix8x8.CharGen.digit_strlist(n)
     |> PCA9622Matrix8x8.CharGen.strlist_tuples()
     |> PCA9622Matrix8x8.set_matrix()
-    Process.send_after(self(), :tick, 1000) # 次の tick をスケジュール
-    {:noreply, n + 1} # 状態を n + 1 に更新
+    Process.send_after(self(), :tick, 1000) # Schedule the next tick
+    {:noreply, n + 1} # Update the state to n + 1
   end
 
   def stop() do
-    PCA9622Matrix8x8.stop() # LEDマトリクスのGenServerを停止
-    GenServer.stop(__MODULE__, :normal) # 自身のGenServerも停止
+    PCA9622Matrix8x8.stop() # Stop the LED matrix GenServer
+    GenServer.stop(__MODULE__, :normal) # Stop this GenServer too
     :ok
   end
 end
