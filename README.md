@@ -23,8 +23,6 @@ def deps do
 end
 ```
 
-Not yet published to hex.pm; until then, depend on it via `path:` or `git:`.
-
 ## Usage
 
 ```elixir
@@ -55,6 +53,6 @@ Pass `name: nil` to start an unnamed process and address it by pid instead.
 See `PCA9622Matrix8x8.Demo` for a complete example that counts up once a
 second and displays the current number.
 
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/pca9622matrix8x8>.
+Documentation is generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
+and published on [HexDocs](https://hexdocs.pm) at
+<https://hexdocs.pm/pca9622matrix8x8>.
