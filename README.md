@@ -6,6 +6,8 @@ board, which drives an 8x8 LED matrix over I2C using the
 [PCA9622](http://doc.switch-science.com/schematic/PCA9622_aki_matrix/PCA9622_aki_matrix_sch.pdf)
 constant-current LED driver in a row/column multiplexed configuration.
 
+Target machine: [BeagleBone Green](https://www.beagleboard.org/boards/seeedstudio-beaglebone-green).
+
 Includes `PCA9622Matrix8x8.CharGen`, a small character generator that
 renders decimal digits (0-9) and, given a radix of 16, hexadecimal digits
 (A-F) as 8x8 bitmaps suitable for `PCA9622Matrix8x8.set_matrix/1`.
