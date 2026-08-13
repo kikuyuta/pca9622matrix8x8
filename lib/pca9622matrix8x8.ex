@@ -8,12 +8,17 @@ defmodule PCA9622Matrix8x8 do
 
     * `:bus_name` - the I2C bus to open (default: `"i2c-2"`)
     * `:i2c_address` - the PCA9622's I2C address (default: `0x50`)
-    * `:reflesh_interval` - column refresh interval in ms (default: `10`)
+    * `:reflesh_interval` - delay in ms between column updates (default: `0`,
+      i.e. refresh as fast as possible). This is mainly useful for slowing
+      the scan down to observe the column-by-column dynamic lighting; a
+      nonzero value causes visible flicker.
     * `:initial_matrix` - initial 8x8 matrix to display
     * `:name` - GenServer name to register under (default: `#{inspect(__MODULE__)}`);
       pass `nil` to start unnamed, which allows multiple boards to run at once.
       When a name other than the default is used (or `nil`), pass the returned
       pid/name explicitly to `set_matrix/2`, `set_matrix_bit/4` and `stop/1`.
+    * `:priority` - the GenServer process's scheduling priority: `:high`,
+      `:normal` (default) or `:low`. See `Process.flag/2`.
   """
 
   use GenServer
@@ -33,7 +38,7 @@ defmodule PCA9622Matrix8x8 do
   @ledout3 0x17
 
   # ms
-  @default_reflesh_interval 10
+  @default_reflesh_interval 0
 
   @doc """
   Starts the LED matrix driver GenServer. See the moduledoc for available
@@ -44,6 +49,7 @@ defmodule PCA9622Matrix8x8 do
     i2c_address = Keyword.get(opts, :i2c_address, @default_i2c_address)
     reflesh_interval = Keyword.get(opts, :reflesh_interval, @default_reflesh_interval)
     initial_matrix = Keyword.get(opts, :initial_matrix)
+    priority = Keyword.get(opts, :priority, :normal)
 
     gen_opts =
       case Keyword.get(opts, :name, __MODULE__) do
@@ -54,8 +60,12 @@ defmodule PCA9622Matrix8x8 do
     GenServer.start_link(
       __MODULE__,
       {bus_name, i2c_address, initial_matrix, reflesh_interval},
-      gen_opts
+      Keyword.put(gen_opts, :spawn_opt, spawn_opt(priority))
     )
+  end
+
+  defp spawn_opt(priority) when priority in [:high, :normal, :low] do
+    [priority: priority]
   end
 
   @impl true

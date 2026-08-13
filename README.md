@@ -52,6 +52,14 @@ PCA9622Matrix8x8.set_matrix(:second_matrix, mat)
 
 Pass `name: nil` to start an unnamed process and address it by pid instead.
 
+`:reflesh_interval` defaults to `0` (refresh as fast as possible). It mainly
+exists to slow the column scan down so you can observe the dynamic lighting;
+a nonzero value causes visible flicker.
+
+Pass `:priority` (`:high`, `:normal` or `:low`) to set the GenServer
+process's scheduling priority, e.g. `priority: :high` to help keep the
+column scan timely under system load.
+
 See `PCA9622Matrix8x8.Demo` for a complete example that counts up once a
 second and displays the current number.
 
