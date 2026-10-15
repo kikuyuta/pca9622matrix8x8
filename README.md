@@ -20,7 +20,7 @@ dependencies in `mix.exs`:
 ```elixir
 def deps do
   [
-    {:pca9622matrix8x8, "~> 0.1.0"}
+    {:pca9622matrix8x8, "~> 0.2.0"}
   ]
 end
 ```
