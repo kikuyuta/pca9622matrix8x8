@@ -19,6 +19,9 @@ defmodule PCA9622Matrix8x8 do
       pid/name explicitly to `set_matrix/2`, `set_matrix_bit/4` and `stop/1`.
     * `:priority` - the GenServer process's scheduling priority: `:high`,
       `:normal` (default) or `:low`. See `Process.flag/2`.
+    * `:orientation` - which side of the board the top of the displayed image
+      faces: `:north_up` (default), `:west_up`, `:east_up` or `:south_up`.
+      Can be changed later with `set_orientation/2`.
   """
 
   use GenServer
@@ -40,6 +43,9 @@ defmodule PCA9622Matrix8x8 do
   # ms
   @default_reflesh_interval 0
 
+  @default_orientation :north_up
+  @orientations [:north_up, :west_up, :east_up, :south_up]
+
   @doc """
   Starts the LED matrix driver GenServer. See the moduledoc for available
   `opts`.
@@ -50,6 +56,7 @@ defmodule PCA9622Matrix8x8 do
     reflesh_interval = Keyword.get(opts, :reflesh_interval, @default_reflesh_interval)
     initial_matrix = Keyword.get(opts, :initial_matrix)
     priority = Keyword.get(opts, :priority, :normal)
+    orientation = Keyword.get(opts, :orientation, @default_orientation)
 
     gen_opts =
       case Keyword.get(opts, :name, __MODULE__) do
@@ -59,7 +66,8 @@ defmodule PCA9622Matrix8x8 do
 
     GenServer.start_link(
       __MODULE__,
-      {bus_name, i2c_address, initial_matrix, reflesh_interval},
+      {bus_name, i2c_address, initial_matrix, reflesh_interval,
+       validate_orientation!(orientation)},
       Keyword.put(gen_opts, :spawn_opt, spawn_opt(priority))
     )
   end
@@ -70,7 +78,7 @@ defmodule PCA9622Matrix8x8 do
 
   @impl true
   @doc false
-  def init({bus_name, i2c_address, initial_matrix, reflesh_interval}) do
+  def init({bus_name, i2c_address, initial_matrix, reflesh_interval, orientation}) do
     Logger.info(
       "Initializing LED Matrix GenServer on #{bus_name} at 0x#{Integer.to_string(i2c_address, 16)}"
     )
@@ -82,7 +90,19 @@ defmodule PCA9622Matrix8x8 do
     Circuits.I2C.write(ref, i2c_address, <<@mode2, 0x55>>)
     new_mat = if is_nil(initial_matrix), do: set_matrix_all(0), else: initial_matrix
     Process.send_after(self(), :dyn_wait, reflesh_interval)
-    {:ok, {ref, i2c_address, new_mat, 0, reflesh_interval}}
+
+    {:ok,
+     %{
+       ref: ref,
+       i2c_address: i2c_address,
+       # matrix as given by the caller (before rotation)
+       mat: new_mat,
+       # matrix actually scanned out to the LEDs (after rotation)
+       disp_mat: rotate_matrix(new_mat, orientation),
+       counter: 0,
+       reflesh_interval: reflesh_interval,
+       orientation: orientation
+     }}
   end
 
   @doc """
@@ -103,21 +123,64 @@ defmodule PCA9622Matrix8x8 do
     GenServer.cast(server, {:set_matrix_bit, x, y, value})
   end
 
-  @impl true
-  @doc false
-  def handle_cast({:set_matrix, mat}, {ref, i2c_address, _old_mat, counter, reflesh_interval}) do
-    # mat is assumed to be an 8x8 matrix (tuple of tuples)
-    # Logger.debug("Updating entire matrix")
-    {:noreply, {ref, i2c_address, mat, counter, reflesh_interval}}
+  @doc """
+  Changes which side of the board the top of the displayed image faces:
+  `:west_up`, `:north_up`, `:east_up` or `:south_up`. The currently displayed
+  matrix is redrawn in the new orientation.
+  """
+  def set_orientation(server \\ __MODULE__, orientation) do
+    GenServer.cast(server, {:set_orientation, validate_orientation!(orientation)})
   end
 
-  def handle_cast(
-        {:set_matrix_bit, x, y, value},
-        {ref, i2c_address, old_mat, counter, reflesh_interval}
-      ) do
-    new_row = put_elem(elem(old_mat, y), x, value)
-    new_mat = put_elem(old_mat, y, new_row)
-    {:noreply, {ref, i2c_address, new_mat, counter, reflesh_interval}}
+  @doc """
+  Rotates an 8x8 matrix (tuple of tuples) so that, when scanned out to the
+  board, its top faces the side given by `orientation`. `:west_up` is the
+  board's native direction and returns `mat` unchanged.
+  """
+  def rotate_matrix(mat, :west_up), do: mat
+
+  # 90 degrees clockwise
+  def rotate_matrix(mat, :north_up) do
+    for(r <- 0..7, do: for(c <- 0..7, do: mat |> elem(7 - c) |> elem(r)) |> List.to_tuple())
+    |> List.to_tuple()
+  end
+
+  # 180 degrees
+  def rotate_matrix(mat, :east_up) do
+    for(r <- 0..7, do: for(c <- 0..7, do: mat |> elem(7 - r) |> elem(7 - c)) |> List.to_tuple())
+    |> List.to_tuple()
+  end
+
+  # 90 degrees counter-clockwise
+  def rotate_matrix(mat, :south_up) do
+    for(r <- 0..7, do: for(c <- 0..7, do: mat |> elem(c) |> elem(7 - r)) |> List.to_tuple())
+    |> List.to_tuple()
+  end
+
+  defp validate_orientation!(orientation) when orientation in @orientations, do: orientation
+
+  defp validate_orientation!(orientation) do
+    raise ArgumentError,
+          "invalid orientation: #{inspect(orientation)}, expected one of #{inspect(@orientations)}"
+  end
+
+  @impl true
+  @doc false
+  def handle_cast({:set_matrix, mat}, state) do
+    # mat is assumed to be an 8x8 matrix (tuple of tuples)
+    # Logger.debug("Updating entire matrix")
+    {:noreply, %{state | mat: mat, disp_mat: rotate_matrix(mat, state.orientation)}}
+  end
+
+  def handle_cast({:set_matrix_bit, x, y, value}, state) do
+    new_row = put_elem(elem(state.mat, y), x, value)
+    new_mat = put_elem(state.mat, y, new_row)
+    {:noreply, %{state | mat: new_mat, disp_mat: rotate_matrix(new_mat, state.orientation)}}
+  end
+
+  def handle_cast({:set_orientation, orientation}, state) do
+    {:noreply,
+     %{state | orientation: orientation, disp_mat: rotate_matrix(state.mat, orientation)}}
   end
 
   @doc """
@@ -137,14 +200,11 @@ defmodule PCA9622Matrix8x8 do
 
   @impl true
   @doc false
-  def handle_info(:dyn_wait, {ref, i2c_address, mat, counter, reflesh_interval}) do
-    {:noreply, {ref, i2c_address, mat, counter, reflesh_interval}, {:continue, :update_leds}}
+  def handle_info(:dyn_wait, state) do
+    {:noreply, state, {:continue, :update_leds}}
   end
 
-  def handle_info(
-        {:EXIT, _from, reason},
-        {ref, i2c_address, _mat, _counter, _reflesh_interval} = state
-      ) do
+  def handle_info({:EXIT, _from, reason}, %{ref: ref, i2c_address: i2c_address} = state) do
     Logger.info("Received EXIT signal with reason: #{inspect(reason)}, cleaning up LED Matrix")
     stop_led(ref, i2c_address)
     {:stop, reason, state}
@@ -152,7 +212,16 @@ defmodule PCA9622Matrix8x8 do
 
   @impl true
   @doc false
-  def handle_continue(:update_leds, {ref, i2c_address, mat, counter, reflesh_interval}) do
+  def handle_continue(
+        :update_leds,
+        %{
+          ref: ref,
+          i2c_address: i2c_address,
+          disp_mat: mat,
+          counter: counter,
+          reflesh_interval: reflesh_interval
+        } = state
+      ) do
     # Clear the previous display (without this, the old column leaves a ghost image)
     {row_high, row_low} = bit_expand({0, 0, 0, 0, 0, 0, 0, 0})
     #    {col_high, col_low} = bit_expand(counter)
@@ -173,7 +242,7 @@ defmodule PCA9622Matrix8x8 do
     Circuits.I2C.write(ref, i2c_address, <<@ledout1, row_high::binary>>)
 
     Process.send_after(self(), :dyn_wait, reflesh_interval)
-    {:noreply, {ref, i2c_address, mat, new_counter, reflesh_interval}}
+    {:noreply, %{state | counter: new_counter}}
   end
 
   @doc false
@@ -222,7 +291,7 @@ defmodule PCA9622Matrix8x8 do
 
   @impl true
   @doc false
-  def terminate(_reason, {ref, i2c_address, _mat, _counter, _reflesh_interval}) do
+  def terminate(_reason, %{ref: ref, i2c_address: i2c_address}) do
     # Turn all LEDs OFF and close the I2C bus
     stop_led(ref, i2c_address)
     Logger.info("Terminating LED Matrix GenServer")

@@ -60,6 +60,15 @@ Pass `:priority` (`:high`, `:normal` or `:low`) to set the GenServer
 process's scheduling priority, e.g. `priority: :high` to help keep the
 column scan timely under system load.
 
+Pass `:orientation` to choose which side of the board the top of the image
+faces: `:north_up` (default), `:west_up`, `:east_up` or `:south_up`. It can
+also be changed at runtime:
+
+```elixir
+PCA9622Matrix8x8.start_link(orientation: :west_up)
+PCA9622Matrix8x8.set_orientation(:south_up)
+```
+
 See `PCA9622Matrix8x8.Demo` for a complete example that counts up once a
 second and displays the current number.
 
